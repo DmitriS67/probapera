@@ -1,52 +1,156 @@
-# Java Gradle CircleCI 2.0 configuration file
-#
-# Check https://circleci.com/docs/2.0/language-java/ for more details
-#
-version: 2
+version: 2.1
+orbs:
+  python: circleci/python@1.2.0
+  aws-ecr: circleci/aws-ecr@6.12.2
+
+defaults: &defaults
+  parameters:
+    profile:
+      type: enum
+      enum: ["dev", "tst", "stg", "prd"]
+      default: "dev"
+    tag:
+      type: string
+      default: ${CIRCLE_SHA1}
+  docker:
+    - image: cimg/openjdk:11.0.8
+
+commands:
+  deploy-to-ecr:
+    parameters:
+      tag:
+        type: string
+        default: ${CIRCLE_SHA1}
+    steps:
+      - aws-ecr/build-and-push-image:
+          repo: notification-$MICROSERVICE
+          setup-remote-docker: true
+          attach-workspace: true
+          tag: << parameters.tag >>
+          path: docker
+          dockerfile: Dockerfile
+          checkout: false
+  update-ecs:
+    parameters:
+      profile:
+        type: enum
+        enum: ["dev", "tst", "stg", "prd"]
+        default: "dev"
+      tag:
+        type: string
+        default: ${CIRCLE_SHA1}
+    steps:
+      - run:
+          name: Update service
+          command: |
+            curl -X POST --header "Content-Type: application/json" -d "{\"build_parameters\": {\"CIRCLE_JOB\": \"deploy\", \"DEPLOY_ENVIRONMENT\": \"<< parameters.profile >>\", \"DEPLOY_VERSIONS\": \"${MICROSERVICE}_int:<< parameters.tag >>\"}}" https://circleci.com/api/v1.1/project/github/PostiDigital/notification-cloud-infra/tree/master?circle-token=$CIRCLE_CI_API_TOKEN
+  trigger-e2e:
+    parameters:
+      profile:
+        type: enum
+        enum: ["dev", "tst", "stg", "prd"]
+        default: "dev"
+    steps:
+      - run: sleep 400
+      - run:
+          name: Trigger e2e
+          command: |
+            curl -X POST --header "Content-Type: application/json" -d "{\"build_parameters\": {\"PROJECT\": \"${CIRCLE_PROJECT_REPONAME}\", \"E2E_ENVIRONMENT\": \"<< parameters.profile >>\", \"COMMIT_ID\": \"${CIRCLE_SHA1}\", \"BRANCH\": \"${CIRCLE_BRANCH}\", \"BUILD_URL\": \"${CIRCLE_BUILD_URL}\"}}" https://circleci.com/api/v1.1/project/github/PostiDigital/notification-tool-e2e/tree/${CIRCLE_BRANCH}?circle-token=$CIRCLE_CI_API_TOKEN
+
 jobs:
   build:
-    docker:
-      # specify the version you desire here
-      - image: cimg/openjdk:15.0.1
-
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
-
-    working_directory: ~/repo
-
-    environment:
-      # Customize the JVM maximum heap limit
-      JVM_OPTS: -Xmx3200m
-      TERM: dumb
-
+    <<: *defaults
     steps:
       - checkout
+      - run:
+          name: chmod permissions
+          command: chmod +x ./gradlew
+      - run:
+          name: checkstyle, compile, test, build
+          command: ./gradlew clean build
+      - run:
+          name: Save test results
+          command: |
+            mkdir -p ~/test-results/junit/
+            find . -type f -regex ".*/build/test-results/test/.*xml" -exec cp {} ~/test-results/junit/ \;
+          when: always
+      - store_test_results:
+          path: ~/test-results
+      - store_artifacts:
+          path: ~/test-results/junit
+      - deploy-to-ecr:
+          tag: << parameters.tag >>
+      - update-ecs:
+          tag: << parameters.tag >>
+          profile: << parameters.profile >>
+  e2e:
+    <<: *defaults
+    steps:
+      - trigger-e2e:
+          profile: << parameters.profile >>
+  update-service-with-latest:
+    <<: *defaults
+    steps:
+      - update-ecs:
+          tag: << parameters.tag >>
+          profile: << parameters.profile >>
+workflows:
+  version: 2
 
-      # Download and cache dependencies
-      - restore_cache:
-          keys:
-            - v1-dependencies-{{ checksum "build.gradle" }}
-            # fallback to using the latest cache if no exact match is found
-            - v1-dependencies-
+  development-build-and-deploy:
+    jobs:
+      - build:
+          profile: dev
+          context: ntf
+          filters:
+            branches:
+              only:
+                - develop
+      - e2e:
+          profile: dev
+          context: ntf
+          filters:
+            branches:
+              only:
+                - develop
 
-      - run: gradle dependencies
+  test-build-and-deploy:
+    jobs:
+      - build:
+          context: ntf
+          profile: tst
+          filters:
+            branches:
+              only:
+                - test
 
-      - save_cache:
-          paths:
-            - ~/.gradle
-          key: v1-dependencies-{{ checksum "build.gradle" }}
+  staging-deploy:
+    jobs:
+      - build:
+          context: ntf
+          profile: stg
+          filters:
+            branches:
+              only:
+                - master
 
-
-      - run: echo $CIRCLE_BRANCH
-      - run: echo "develop!!!!!!!!!!"
-        filters:
-          branches:
-            only:
-              develop
-
-
-      # run tests!
-      - run: gradle test
-
+  production-deploy:
+    jobs:
+      - update-service-with-latest:
+          context: ntf
+          profile: prd
+          filters:
+            tags:
+              only: /^v\d\.\d\.\d$/
+            branches:
+              ignore: /.*/
+          requires:
+            - deploy-to-prod?
+      - deploy-to-prod?:
+          type: approval
+          context: ntf
+          filters:
+            tags:
+              only: /^v\d\.\d\.\d$/
+            branches:
+              ignore: /.*/
