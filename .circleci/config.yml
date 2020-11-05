@@ -40,12 +40,12 @@ jobs:
 
 
       - run: echo $CIRCLE_BRANCH
-      - run:
-        name: check
-        command: |
-          if [ "${CIRCLE_BRANCH}" == "develop" ]; then
-          echo "develop!!!!!!!!!!"
-          fi
+      - run: echo "develop!!!!!!!!!!"
+        filters:
+          branches:
+            only:
+              develop
+
 
       # run tests!
       - run: gradle test
