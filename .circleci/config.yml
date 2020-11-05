@@ -39,7 +39,7 @@ jobs:
           key: v1-dependencies-{{ checksum "build.gradle" }}
 
 
-      - run: echo "test echo"
+      - run: echo $CIRCLE_BRANCH
 
       # run tests!
       - run: gradle test
