@@ -40,7 +40,8 @@ jobs:
 
 
       - run: echo $CIRCLE_BRANCH
-      - run: if [ "${CIRCLE_BRANCH}" == "develop" ]; then
+      - run: |
+          if [ "${CIRCLE_BRANCH}" == "develop" ]; then
           echo "develop!!!!!!!!!!"
           fi
 
