@@ -134,23 +134,4 @@ workflows:
               only:
                 - master
 
-  production-deploy:
-    jobs:
-      - update-service-with-latest:
-          context: ntf
-          profile: prd
-          filters:
-            tags:
-              only: /^v\d\.\d\.\d$/
-            branches:
-              ignore: /.*/
-          requires:
-            - deploy-to-prod?
-      - deploy-to-prod?:
-          type: approval
-          context: ntf
-          filters:
-            tags:
-              only: /^v\d\.\d\.\d$/
-            branches:
-              ignore: /.*/
+
