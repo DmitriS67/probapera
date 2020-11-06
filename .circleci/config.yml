@@ -38,12 +38,14 @@ jobs:
             - ~/.gradle
           key: v1-dependencies-{{ checksum "build.gradle" }}
 
-
-      - run: echo $CIRCLE_BRANCH
-      - run: |
-          if [ "${CIRCLE_BRANCH}" == "develop" ]; then
-          echo "develop!!!!!!!!!!"
-          fi
+      when:
+        condition: [ "${CIRCLE_BRANCH}" == "develop" ]
+        steps:
+          - run: echo $CIRCLE_BRANCH
+          - run: |
+            if [ "${CIRCLE_BRANCH}" == "develop" ]; then
+            echo "develop!!!!!!!!!!"
+            fi
 
       # run tests!
       - run: gradle test
