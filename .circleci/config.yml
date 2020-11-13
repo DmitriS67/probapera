@@ -44,12 +44,11 @@ jobs:
             - [ "${CIRCLE_BRANCH}" == "develop" ]
             - - [ "${CIRCLE_BRANCH}" == "develop" ]
 
-        steps:
-          - run: echo $CIRCLE_BRANCH
-          - run: |
-            if [ "${CIRCLE_BRANCH}" == "develop" ]; then
-            echo "develop!!!!!!!!!!"
-            fi
+      - run: echo $CIRCLE_BRANCH
+      - run: |
+      if [ "${CIRCLE_BRANCH}" == "develop" ]; then
+          echo "develop!!!!!!!!!!"
+          fi
 
       # run tests!
       - run: gradle test
